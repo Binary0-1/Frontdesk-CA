@@ -8,7 +8,7 @@ from typing import Optional
 class HelpRequest(SQLModel, table=True):  
     __tablename__ = "help_requests" 
     id: uuid.UUID | None = Field(default_factory=uuid.uuid4, primary_key=True)
-    customer_id: uuid.UUID = Field(sa_column=Column("customer_id", ForeignKey("customer.id")))
+    customer_id: uuid.UUID = Field(sa_column=Column("customer_id", ForeignKey("customers.id")))
     question: str
     status: str = Field(default="pending")
     supervisor_response: Optional[str] = Field(default=None)
