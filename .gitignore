@@ -4,3 +4,4 @@ __pycache__/
 .env
 agent/.env.local
 agent/.venv
+frontend/node_modules
