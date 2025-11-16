@@ -1,12 +1,7 @@
-"""
-Knowledge Base Service
-Handles all KB lookups and data retrieval logic.
-"""
 import logging
 from typing import Dict, List, Optional
 from dataclasses import dataclass
-import boto3
-import os
+from .db import get_db
 
 logger = logging.getLogger("kb_service")
 
@@ -28,32 +23,48 @@ class KBResult:
 
 class KnowledgeBaseService:
     
-    def __init__(self, table_name: str, region: str):
-        self.dynamo = boto3.resource(
-            "dynamodb",
-            region_name=region,
-            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-        )
-        self.table = self.dynamo.Table(table_name)
-        
-    def search(self, business_id: str, query: str, max_results: int = 3) -> KBResult:
+    def __init__(self):
+        pass # DB session will be passed per request or managed by a context manager
+
+    def search(self, business_id: int, query: str, max_results: int = 3) -> KBResult:
         logger.info(f"KB search called for business '{business_id}' with query: '{query}'")
+        
+        conn = None
         try:
-            resp = self.table.query(
-                KeyConditionExpression="PK = :pk AND begins_with(SK, :sk)",
-                ExpressionAttributeValues={
-                    ":pk": f"BUSINESS#{business_id}",
-                    ":sk": "ENTRY#"
-                }
+            conn = get_db()
+            cur = conn.cursor()
+
+            # Using a raw SQL query for simplicity, but can be replaced with SQLAlchemy ORM
+            # This query fetches all KB articles for the given business_id
+            cur.execute(
+                "SELECT title, content FROM kb_article WHERE business_id = %s",
+                (business_id,)
             )
+            items = cur.fetchall()
             
-            items = resp.get("Items", [])
             if not items:
                 logger.warning(f"No KB entries found for business: {business_id}")
                 return KBResult(hit=False, matches=[])
             
-            matches = self._rank_results(query, items)
+            # Convert content from JSONB to dict and extract question/answer for ranking
+            processed_items = []
+            for item in items:
+                title = item['title']
+                content = item['content'] # This is already a dict from RealDictCursor
+                
+                # Assuming 'question' and 'answer' keys exist within the JSONB content
+                question_from_content = content.get('question', title if title else '')
+                answer_from_content = content.get('answer', '')
+                
+                if question_from_content and answer_from_content:
+                    processed_items.append({
+                        "question": question_from_content,
+                        "answer": answer_from_content,
+                        "category": content.get('category'), # Assuming category might be in content
+                        "original_title": title # Keep original title if needed
+                    })
+            
+            matches = self._rank_results(query, processed_items)
             
             top_matches = matches[:max_results]
             
@@ -67,11 +78,13 @@ class KnowledgeBaseService:
         except Exception as e:
             logger.error(f"KB search error: {e}", exc_info=True)
             return KBResult(hit=False, matches=[], error=str(e))
-        return KBResult(hit=False, matches=[])
+        finally:
+            if conn:
+                conn.close()
     
     def _rank_results(self, query: str, items: List[Dict]) -> List[KBMatch]:
 
-        logger.info(f"Ranking results........", exc_info=True)
+        logger.info(f"Ranking results........")
         
         query_lower = query.lower()
         query_words = set(self._tokenize(query_lower))
@@ -95,7 +108,7 @@ class KnowledgeBaseService:
         
         matches.sort(key=lambda x: x.score, reverse=True)
 
-        logger.info(f"matches :  {matches}", exc_info=True)
+        logger.info(f"matches :  {matches}")
         
         return matches
     
@@ -134,4 +147,3 @@ class KnowledgeBaseService:
         
         words = text.split()
         return [w for w in words if w not in stop_words and len(w) > 2]
-    

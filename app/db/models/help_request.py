@@ -2,7 +2,7 @@
 import enum
 from sqlmodel import SQLModel, Field
 from datetime import datetime
-from sqlalchemy import Column, text, ForeignKey, Enum
+from sqlalchemy import Column, text, Enum
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 import uuid
 from typing import Optional
@@ -21,7 +21,6 @@ class HelpRequest(SQLModel, table=True):
             server_default=text("gen_random_uuid()"),
         )
     )
-    business_id: uuid.UUID = Field(sa_column=Column(UUID(as_uuid=True), ForeignKey("business.id", ondelete="CASCADE")))
     question: str = Field(nullable=False)
     customer_contact: dict | None = Field(sa_column=Column(JSONB))
     status: HelpStatus = Field(sa_column=Column(Enum(HelpStatus)), default=HelpStatus.pending)

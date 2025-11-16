@@ -2,18 +2,11 @@
 from sqlmodel import SQLModel, Field
 from datetime import datetime
 from sqlalchemy import text, Column
-from sqlalchemy.dialects.postgresql import UUID
-import uuid
+from typing import Optional
 
 class Business(SQLModel, table=True):
     __tablename__ = "business"
-    id: uuid.UUID = Field(
-        sa_column=Column(
-            UUID(as_uuid=True),
-            primary_key=True,
-            server_default=text("gen_random_uuid()"),
-        )
-    )
+    id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(nullable=False)
     created_at: datetime = Field(
         default_factory=datetime.utcnow,

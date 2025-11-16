@@ -18,6 +18,7 @@ from livekit.plugins import noise_cancellation, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 import os
+import uuid
 from typing import List, Dict
 from services.kb_service import KnowledgeBaseService
 from services.help_service import HelpRequestService
@@ -28,16 +29,11 @@ load_dotenv(".env.local")
 logger = logging.getLogger("agent")
 logger.setLevel(logging.INFO)
 
+# Use a placeholder UUID for BUSINESS_ID for now. In a real application, this would come from context.
 BUSINESS_ID = "1"
 
-kb_service = KnowledgeBaseService(
-    table_name=os.getenv("DYNAMO_KB_TABLE"),
-    region=os.getenv("AWS_REGION")
-)
-help_service = HelpRequestService(
-    table_name=os.getenv("DYNAMO_HR_TABLE"),
-    region=os.getenv("AWS_REGION")
-)
+kb_service = KnowledgeBaseService()
+help_service = HelpRequestService()
 
 
 # Prewarm
@@ -82,11 +78,16 @@ Keep responses natural and conversational without complex formatting or emojis."
                 logger.info(f"KB hit (multiple): {len(matches)} matches")
                 return f"Here's what I found:\n\n{combined}"
         else:
-            help_request = help_service.create_request(question, str(BUSINESS_ID), str(random.randint(10**9, 10**10 - 1)))
-            
-            return f"""I don't have that specific information in my current knowledge base. 
+            # Placeholder for customer contact information
+            customer_contact = {"phone_number": "unknown", "name": "unknown"} 
+            try:
+                help_request = help_service.create_request(question, BUSINESS_ID, customer_contact)
+                return f"""I don't have that specific information in my current knowledge base. 
 I've created a help request (ID: {help_request.request_id}) and one of our team members will get back to you shortly. 
 Is there anything else I can help you with in the meantime?"""
+            except Exception as e:
+                logger.error(f"Failed to create help request: {e}")
+                return "I'm sorry, I couldn't create a help request at this time. Please try again later."
 
 
 async def entrypoint(ctx: JobContext):

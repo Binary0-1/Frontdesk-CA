@@ -1,139 +1,75 @@
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Dict
 from dataclasses import dataclass
-import boto3
-import hashlib
-import os
+from .db import get_db
 
 logger = logging.getLogger("help_service")
-
-
-def make_hash(text: str) -> str:
-    return hashlib.sha256(text.encode()).hexdigest()
 
 
 @dataclass
 class HelpRequest:
     request_id: str
-    user_id: str
     business_id: str
     question: str
     created_at: Optional[str] = None
     resolved_at: Optional[str] = None
     status: str = "pending"
     answer: Optional[str] = None
-
-    def __post_init__(self):
-        if self.created_at is None:
-            self.created_at = datetime.now(timezone.utc).isoformat()
+    customer_contact: Optional[Dict] = None
 
 
 class HelpRequestService:
 
-    def __init__(self, table_name: str, region: str):
+    def __init__(self):
         logger.info("Help Service initialized")
 
-        self.dynamo = boto3.resource(
-            "dynamodb",
-            region_name=region,
-            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-        )
-        self.table = self.dynamo.Table(table_name)
+    def create_request(self, question: str, business_id: str, customer_contact: Dict) -> HelpRequest:
+        conn = None
+        try:
+            conn = get_db()
+            cur = conn.cursor()
 
-    def register_temp_phone(self, business_id: str, phone_number: str) -> str:
-        user_id = make_hash(f"{business_id}:{phone_number}")
+            # Check if business_id exists
+            cur.execute("SELECT id FROM business WHERE id = %s", (business_id,))
+            if not cur.fetchone():
+                raise ValueError(f"Business with ID {business_id} does not exist.")
 
-        self.table.put_item(
-            Item={
-                "PK": f"BUSINESS#{business_id}",
-                "SK": f"USER#{user_id}",
-                "user_id": user_id,
-                "phone_number": phone_number,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-        )
+            request_id = str(uuid.uuid4())
+            created_at = datetime.now(timezone.utc)
 
-        logger.info(f"Temporary phone -> user_id: {phone_number} -> {user_id}")
-        return user_id
+            # Insert into help_request table
+            cur.execute(
+                """
+                INSERT INTO help_request (id, business_id, question, customer_contact, status, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, business_id, question, customer_contact, status, created_at
+                """,
+                (request_id, business_id, question, customer_contact, "pending", created_at)
+            )
+            new_request = cur.fetchone()
+            conn.commit()
 
-    def create_request(self, question: str, business_id: str, phone_number: str) -> HelpRequest:
-        request_id = str(uuid.uuid4())
-        created_at = datetime.now(timezone.utc).isoformat()
-        user_id = make_hash(f"{business_id}:{phone_number}")
+            help_req = HelpRequest(
+                request_id=str(new_request['id']),
+                business_id=str(new_request['business_id']),
+                question=new_request['question'],
+                customer_contact=new_request['customer_contact'],
+                status=new_request['status'],
+                created_at=new_request['created_at'].isoformat() if new_request['created_at'] else None,
+            )
+            logger.info(f"Help request created: {request_id}")
+            return help_req
 
-        help_req = HelpRequest(
-            request_id=request_id,
-            user_id=user_id,
-            business_id=business_id,
-            question=question,
-            created_at=created_at,
-        )
+        except Exception as e:
+            logger.error(f"Error creating help request: {e}", exc_info=True)
+            if conn:
+                conn.rollback()
+            raise
+        finally:
+            if conn:
+                conn.close()
 
-        item = {
-            "PK": f"BUSINESS#{business_id}",
-            "SK": f"REQUEST#{request_id}",
-            "request_id": request_id,
-            "business_id": business_id,
-            "user_id": user_id,
-            "question": question,
-            "status": "pending",
-            "created_at": created_at,
-        }
-
-        self.table.put_item(Item=item)
-        logger.info(f"Help request created: {request_id}")
-
-        return help_req
-
-    def get_request(self, business_id: int, request_id: str) -> Optional[HelpRequest]:
-        resp = self.table.get_item(
-            Key={
-                "PK": f"BUSINESS#{business_id}",
-                "SK": f"REQUEST#{request_id}"
-            }
-        )
-
-        item = resp.get("Item")
-        if not item:
-            return None
-
-        return HelpRequest(
-            request_id=item["request_id"],
-            user_id=item["user_id"],
-            business_id=item["business_id"],
-            question=item["question"],
-            created_at=item["created_at"],
-            resolved_at=item.get("resolved_at"),
-            status=item["status"],
-            answer=item.get("answer"),
-        )
-
-    def update_status(self, business_id: int, request_id: str, new_status: str, answer: Optional[str] = None) -> bool:
-        update_expr = "SET #s = :new_status"
-        expr_vals = {":new_status": new_status}
-        expr_names = {"#s": "status"}
-
-        if new_status == "resolved":
-            resolved_ts = datetime.now(timezone.utc).isoformat()
-            update_expr += ", resolved_at = :resolved_at"
-            expr_vals[":resolved_at"] = resolved_ts
-
-        if answer is not None:
-            update_expr += ", answer = :answer"
-            expr_vals[":answer"] = answer
-
-        resp = self.table.update_item(
-            Key={
-                "PK": f"BUSINESS#{business_id}",
-                "SK": f"REQUEST#{request_id}"
-            },
-            UpdateExpression=update_expr,
-            ExpressionAttributeNames=expr_names,
-            ExpressionAttributeValues=expr_vals,
-            ReturnValues="UPDATED_NEW"
-        )
-
-        return "Attributes" in resp
+    # Other methods like get_request, update_status would also need to be rewritten
+    # to use psycopg2 and SQL queries. For now, focusing on create_request.
