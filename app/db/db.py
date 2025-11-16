@@ -3,7 +3,8 @@ from config import settings
 from .models.business import Business
 from .models.help_request import HelpRequest
 from .models.kb_article import KBArticle
-from .models.supervisor_response import SupervisorResponse
+from .models.customer import Customer
+
 
 engine = create_engine(settings.DB_URL, echo=True)
 

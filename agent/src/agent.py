@@ -16,6 +16,8 @@ from livekit.agents import (
 
 from livekit.plugins import noise_cancellation, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
+from logging_config import setup_logging
+
 
 import os
 import uuid
@@ -24,13 +26,13 @@ from services.kb_service import KnowledgeBaseService
 from services.help_service import HelpRequestService
 
 
+setup_logging()
 load_dotenv(".env.local")
 
 logger = logging.getLogger("agent")
 logger.setLevel(logging.INFO)
 
-# Use a placeholder UUID for BUSINESS_ID for now. In a real application, this would come from context.
-BUSINESS_ID = "1"
+BUSINESS_ID = 1
 
 kb_service = KnowledgeBaseService()
 help_service = HelpRequestService()
@@ -57,7 +59,8 @@ Keep responses natural and conversational without complex formatting or emojis."
     @function_tool
     async def lookup_information(self, question: str):
         logger.info(f"Searching for -: {question}")
-        logger.info("/n/n/n")
+        logger.info("\n\n\n")
+
 
         kb_result = kb_service.search(BUSINESS_ID, question)
 
@@ -78,12 +81,9 @@ Keep responses natural and conversational without complex formatting or emojis."
                 logger.info(f"KB hit (multiple): {len(matches)} matches")
                 return f"Here's what I found:\n\n{combined}"
         else:
-            # Placeholder for customer contact information
-            customer_contact = {"phone_number": "unknown", "name": "unknown"} 
             try:
-                help_request = help_service.create_request(question, BUSINESS_ID, customer_contact)
-                return f"""I don't have that specific information in my current knowledge base. 
-I've created a help request (ID: {help_request.request_id}) and one of our team members will get back to you shortly. 
+                help_request = help_service.create_request(question, BUSINESS_ID, 1)
+                return f"""I don't have that specific information currently "Let me check with my supervisor and get back to you.". 
 Is there anything else I can help you with in the meantime?"""
             except Exception as e:
                 logger.error(f"Failed to create help request: {e}")

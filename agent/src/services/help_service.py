@@ -1,7 +1,6 @@
 import logging
-import uuid
 from datetime import datetime, timezone
-from typing import Optional, Dict
+from typing import Optional
 from dataclasses import dataclass
 from .db import get_db
 
@@ -10,14 +9,14 @@ logger = logging.getLogger("help_service")
 
 @dataclass
 class HelpRequest:
-    request_id: str
-    business_id: str
+    id: int
+    business_id: int
+    customer_id: int
     question: str
-    created_at: Optional[str] = None
-    resolved_at: Optional[str] = None
     status: str = "pending"
-    answer: Optional[str] = None
-    customer_contact: Optional[Dict] = None
+    supervisor_answer: Optional[str] = None
+    created_at: Optional[str] = None
+    answered_at: Optional[str] = None
 
 
 class HelpRequestService:
@@ -25,41 +24,46 @@ class HelpRequestService:
     def __init__(self):
         logger.info("Help Service initialized")
 
-    def create_request(self, question: str, business_id: str, customer_contact: Dict) -> HelpRequest:
+    def create_request(self, question: str, business_id: int, customer_id: int) -> HelpRequest:
         conn = None
         try:
             conn = get_db()
             cur = conn.cursor()
 
-            # Check if business_id exists
             cur.execute("SELECT id FROM business WHERE id = %s", (business_id,))
-            if not cur.fetchone():
+            if cur.fetchone() is None:
                 raise ValueError(f"Business with ID {business_id} does not exist.")
 
-            request_id = str(uuid.uuid4())
+            cur.execute("SELECT id FROM customers WHERE id = %s", (customer_id,))
+            if cur.fetchone() is None:
+                raise ValueError(f"Customer with ID {customer_id} does not exist.")
+
             created_at = datetime.now(timezone.utc)
 
-            # Insert into help_request table
             cur.execute(
                 """
-                INSERT INTO help_request (id, business_id, question, customer_contact, status, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                RETURNING id, business_id, question, customer_contact, status, created_at
+                INSERT INTO help_requests (business_id, customer_id, question, status, created_at)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING id, business_id, customer_id, question, status, supervisor_answer, created_at, answered_at
                 """,
-                (request_id, business_id, question, customer_contact, "pending", created_at)
+                (business_id, customer_id, question, "pending", created_at)
             )
-            new_request = cur.fetchone()
+
+            row = cur.fetchone()
             conn.commit()
 
             help_req = HelpRequest(
-                request_id=str(new_request['id']),
-                business_id=str(new_request['business_id']),
-                question=new_request['question'],
-                customer_contact=new_request['customer_contact'],
-                status=new_request['status'],
-                created_at=new_request['created_at'].isoformat() if new_request['created_at'] else None,
+                id=row["id"],
+                business_id=row["business_id"],
+                customer_id=row["customer_id"],
+                question=row["question"],
+                status=row["status"],
+                supervisor_answer=row["supervisor_answer"],
+                created_at=row["created_at"].isoformat() if row["created_at"] else None,
+                answered_at=row["answered_at"].isoformat() if row["answered_at"] else None,
             )
-            logger.info(f"Help request created: {request_id}")
+
+            logger.info(f"Help request created: {help_req.id}")
             return help_req
 
         except Exception as e:
@@ -70,6 +74,3 @@ class HelpRequestService:
         finally:
             if conn:
                 conn.close()
-
-    # Other methods like get_request, update_status would also need to be rewritten
-    # to use psycopg2 and SQL queries. For now, focusing on create_request.

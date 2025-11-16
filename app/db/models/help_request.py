@@ -1,34 +1,63 @@
-
 import enum
 from sqlmodel import SQLModel, Field
 from datetime import datetime
-from sqlalchemy import Column, text, Enum
-from sqlalchemy.dialects.postgresql import UUID, JSONB
-import uuid
+from sqlalchemy import Column, Integer, Enum, DateTime, text
 from typing import Optional
+
 
 class HelpStatus(enum.Enum):
     pending = "pending"
     resolved = "resolved"
     timed_out = "timed_out"
 
+
 class HelpRequest(SQLModel, table=True):
-    __tablename__ = "help_request"
-    id: uuid.UUID = Field(
+    __tablename__ = "help_requests"
+
+    id: Optional[int] = Field(
+        default=None,
         sa_column=Column(
-            UUID(as_uuid=True),
+            Integer,
             primary_key=True,
-            server_default=text("gen_random_uuid()"),
+            autoincrement=True
         )
     )
+
+    customer_id: int = Field(
+        foreign_key="customers.id",
+        nullable=False
+    )
+
+    business_id: int = Field(
+        foreign_key="business.id",
+        nullable=False
+    )
+
     question: str = Field(nullable=False)
-    customer_contact: dict | None = Field(sa_column=Column(JSONB))
-    status: HelpStatus = Field(sa_column=Column(Enum(HelpStatus)), default=HelpStatus.pending)
-    supervisor_answer: str | None = Field(default=None)
-    answered_at: Optional[datetime] = Field(default=None)
-    timeout_at: Optional[datetime] = Field(default=None)
+
+    status: HelpStatus = Field(
+        default=HelpStatus.pending,
+        sa_column=Column(
+            Enum(HelpStatus, name="helpstatus"),
+            nullable=False,
+            server_default=text("'pending'")
+        )
+    )
+
+    supervisor_answer: Optional[str] = None
+
+    answered_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=True
+        )
+    )
+
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        nullable=False,
-        sa_column_kwargs={"server_default": text("now()")}
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+            server_default=text("now()")
+        )
     )
