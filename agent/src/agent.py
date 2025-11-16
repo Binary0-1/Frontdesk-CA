@@ -39,6 +39,7 @@ SUPERVISOR_CHANNEL = "supervisor_answers"
 # Business Services 
 # Hardcoding business id for dev 
 BUSINESS_ID = 1
+BUSINESS_NAME= "Blossoms and Roots Salon" # hardcoded 
 kb_service = KnowledgeBaseService()
 help_service = HelpRequestService()
 
@@ -52,7 +53,7 @@ def prewarm(proc: JobProcess):
 class ReceptionistAgent(Agent):
     def __init__(self) -> None:
         super().__init__(
-            instructions="""You are a professional receptionist assistant for a business.
+            instructions=f"""You are a professional receptionist assistant for a business named {BUSINESS_NAME}.
 Your responsibilities:
 1. Answer caller questions using the knowledge base
 2. If information isn't available, create a help request and assure the caller to wait while you get their answer
@@ -74,7 +75,6 @@ Keep responses natural and conversational without complex formatting or emojis""
             return f"Based on our records: {match.answer}"
         
 
-        # we can make  it async to optimize agent reply speed
         try:
             help_request = help_service.create_request(question, BUSINESS_ID, 1)
             logger.info(f"Created help request: {help_request.id}")
@@ -136,12 +136,11 @@ async def listen_for_supervisor_updates(agent_session: AgentSession):
         if int(data.get("business_id", -1)) != BUSINESS_ID:
             continue
 
-        # Notify caller
         await agent_session.generate_reply(
         instructions=(
-            "Tell the caller that you have the data they requested for regrading "
-            f'{data.get("answer")}. '
-            "Frame the reply as someone from the team letting the user knwo about the data they requested"
+            f"Tell the caller that you have the data they requested for rephrasing the question they asked: '{data.get('question')}'. "
+            f"{data.get('answer')}. "
+            "Frame the reply as someone from the team letting the user know about the data they requested"
         )
 )
 

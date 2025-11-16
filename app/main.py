@@ -6,18 +6,23 @@ from fastapi.middleware.cors import CORSMiddleware
 import json
 import redis
 
+from pydantic import BaseModel
+
 from app.db.db import get_session
 from app.db.models.help_request import HelpRequest, HelpStatus
 from app.db.models.kb_article import KBArticle
-from pydantic import BaseModel
+
+from app.services.gemini_service import extract_kb_metadata
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 redis_client = redis.Redis(host="localhost", port=6379, decode_responses=True)
 
 app = FastAPI()
 
-
-#temp to avoid cors in dev
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -29,6 +34,7 @@ app.add_middleware(
 
 class AnswerPayload(BaseModel):
     answer: str
+
 
 
 @app.get("/requests/pending", response_model=List[HelpRequest])
@@ -44,12 +50,13 @@ def get_resolved_requests(session: Session = Depends(get_session)):
 
 
 @app.post("/requests/{req_id}/answer")
-def answer_help_request(
+async def answer_help_request(
     req_id: int,
     payload: AnswerPayload,
     session: Session = Depends(get_session)
 ):
     help_req = session.get(HelpRequest, req_id)
+
     if not help_req:
         raise HTTPException(status_code=404, detail="Help request not found")
 
@@ -61,12 +68,16 @@ def answer_help_request(
     help_req.status = HelpStatus.resolved
     help_req.answered_at = datetime.utcnow()
 
-    # Insert into KB
+    # NEW: Extract metadata via llm
+    meta = await extract_kb_metadata(help_req.question, payload.answer)
     kb_entry = KBArticle(
         business_id=help_req.business_id,
         title=help_req.question,
         content={
-            "question": help_req.question,
+            "key": meta["key"],
+            "canonical_question": meta["canonical_question"],
+            "category": meta["category"],
+            "tags": meta["tags"],
             "answer": payload.answer
         }
     )
@@ -76,17 +87,17 @@ def answer_help_request(
     session.commit()
     session.refresh(help_req)
 
-    # Publish to redis as JSON
     msg = {
         "business_id": help_req.business_id,
         "request_id": help_req.id,
-        "answer": payload.answer
+        "answer": payload.answer,
+        "question" : help_req.question,
     }
 
     redis_client.publish("supervisor_answers", json.dumps(msg))
 
     return {
-        "message": "Help request resolved and added to KB",
+        "message": "Help request resolved, metadata extracted, KB updated",
         "request": help_req
     }
 

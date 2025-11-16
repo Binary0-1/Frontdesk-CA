@@ -27,14 +27,12 @@ class KnowledgeBaseService:
         pass
 
     def search(self, business_id: int, query: str, max_results: int = 3) -> KBResult:
-        logger.info(f"KB search called for business '{business_id}' with query: '{query}'")
 
         conn = None
         try:
             conn = get_db()
             cur = conn.cursor()
 
-            ## get the json data stored in KB table 
             cur.execute(
                 """
                 SELECT title, content 
@@ -47,7 +45,7 @@ class KnowledgeBaseService:
 
             
             if not rows:
-                logger.warning(f"No KB entries found for business: {business_id}")
+                logger.warning(f"No KB entries found for business")
                 return KBResult(hit=False, matches=[])
 
             # Normalize structure for ranking
@@ -58,16 +56,16 @@ class KnowledgeBaseService:
                 content = row["content"]
 
                 # Extract question answer from JSON content
-                question_from_content = content.get("question", title or "")
+                canonical_question = content.get("canonical_question", title or "")
                 answer_from_content = content.get("answer", "")
                 category = content.get("category")
 
                 if answer_from_content: 
                     processed_items.append({
-                        "question": question_from_content,
-                        "answer": answer_from_content,
-                        "category": category,
-                    })
+                    "question": canonical_question,
+                    "answer": answer_from_content,
+                    "category": category,
+                })
             # basic ranking 
             matches = self._rank_results(query, processed_items)
 
@@ -87,7 +85,6 @@ class KnowledgeBaseService:
     # ----------------- Ranking Logic -----------------
 
     def _rank_results(self, query: str, items: List[Dict]) -> List[KBMatch]:
-        logger.info("Ranking results...")
 
         query_lower = query.lower()
         query_words = set(self._tokenize(query_lower))
