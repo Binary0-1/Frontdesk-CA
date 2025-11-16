@@ -1,12 +1,12 @@
 from sqlmodel import SQLModel, Field
-from datetime import datetime
 from sqlalchemy import Column, Integer, text
 from sqlalchemy import DateTime
+from datetime import datetime
 from typing import Optional
 
 
-class Customer(SQLModel, table=True):
-    __tablename__ = "customers"
+class Business(SQLModel, table=True):
+    __tablename__ = "business"
 
     id: Optional[int] = Field(
         default=None,
@@ -14,11 +14,10 @@ class Customer(SQLModel, table=True):
             Integer,
             primary_key=True,
             autoincrement=True
-        ),
+        )
     )
 
-    name: Optional[str] = None
-    phone: Optional[str] = None
+    name: str = Field(nullable=False)
 
     created_at: datetime = Field(
         sa_column=Column(
