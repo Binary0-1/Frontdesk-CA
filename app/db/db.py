@@ -1,9 +1,9 @@
 from sqlmodel import SQLModel, create_engine, Session
 from config import settings
-from .models.customer import Customer
+from .models.business import Business
 from .models.help_request import HelpRequest
-from .models.supervisor import Supervisor
-from .models.knowledge_base import KnowledgeBase
+from .models.kb_article import KBArticle
+from .models.supervisor_response import SupervisorResponse
 
 engine = create_engine(settings.DB_URL, echo=True)
 

@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-ENV_PATH = os.path.join(BASE_DIR, ".env")
+ENV_PATH = os.path.join(BASE_DIR, "agent", ".env.local")
 load_dotenv(ENV_PATH)
 
 sys.path.append(BASE_DIR)
@@ -16,10 +16,7 @@ from sqlalchemy import engine_from_config, pool
 from config import settings
 from sqlmodel import SQLModel
 
-from app.db.models.customer import Customer
-from app.db.models.help_request import HelpRequest
-from app.db.models.knowledge_base import KnowledgeBase
-from app.db.models.supervisor import Supervisor
+from app.db.db import *
 
 
 

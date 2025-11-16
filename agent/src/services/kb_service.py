@@ -38,11 +38,8 @@ class KnowledgeBaseService:
         self.table = self.dynamo.Table(table_name)
         
     def search(self, business_id: str, query: str, max_results: int = 3) -> KBResult:
-        """
-        Search the knowledge base for relevant information.
-        """
+        logger.info(f"KB search called for business '{business_id}' with query: '{query}'")
         try:
-            # Query DynamoDB
             resp = self.table.query(
                 KeyConditionExpression="PK = :pk AND begins_with(SK, :sk)",
                 ExpressionAttributeValues={
@@ -70,8 +67,11 @@ class KnowledgeBaseService:
         except Exception as e:
             logger.error(f"KB search error: {e}", exc_info=True)
             return KBResult(hit=False, matches=[], error=str(e))
+        return KBResult(hit=False, matches=[])
     
     def _rank_results(self, query: str, items: List[Dict]) -> List[KBMatch]:
+
+        logger.info(f"Ranking results........", exc_info=True)
         
         query_lower = query.lower()
         query_words = set(self._tokenize(query_lower))
@@ -94,6 +94,8 @@ class KnowledgeBaseService:
                 ))
         
         matches.sort(key=lambda x: x.score, reverse=True)
+
+        logger.info(f"matches :  {matches}", exc_info=True)
         
         return matches
     

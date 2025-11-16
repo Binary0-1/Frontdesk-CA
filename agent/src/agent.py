@@ -1,5 +1,6 @@
 import logging
 from dotenv import load_dotenv
+import random 
 from livekit.agents import function_tool
 
 from livekit.agents import (
@@ -16,156 +17,78 @@ from livekit.agents import (
 from livekit.plugins import noise_cancellation, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
-import boto3
 import os
-import uuid
 from typing import List, Dict
+from services.kb_service import KnowledgeBaseService
+from services.help_service import HelpRequestService
+
 
 load_dotenv(".env.local")
 
 logger = logging.getLogger("agent")
 logger.setLevel(logging.INFO)
 
-# -----------------------------
-# DynamoDB + SQL placeholders
-# -----------------------------
-dynamo = boto3.resource(
-    "dynamodb",
-    region_name=os.getenv("AWS_REGION"),
-    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+BUSINESS_ID = "1"
+
+kb_service = KnowledgeBaseService(
+    table_name=os.getenv("DYNAMO_KB_TABLE"),
+    region=os.getenv("AWS_REGION")
 )
-KB_TABLE = dynamo.Table(os.getenv("DYNAMO_KB_TABLE"))
-BUSINESS_ID = "212"
+help_service = HelpRequestService(
+    table_name=os.getenv("DYNAMO_HR_TABLE"),
+    region=os.getenv("AWS_REGION")
+)
 
 
-def kb_lookup(business_id: str, question: str) -> Dict:
-    """
-    Enhanced KB lookup with better matching.
-    Returns multiple relevant entries if found.
-    """
-    # try:
-    #     resp = KB_TABLE.query(
-    #         KeyConditionExpression="PK = :pk AND begins_with(SK, :sk)",
-    #         ExpressionAttributeValues={
-    #             ":pk": f"BUSINESS#{business_id}",
-    #             ":sk": "ENTRY#"
-    #         }
-    #     )
-        
-    #     items = resp.get("Items", [])
-    #     if not items:
-    #         return {"hit": False, "matches": []}
-        
-    #     # Enhanced matching: check for keyword overlap
-    #     question_lower = question.lower()
-    #     question_words = set(question_lower.split())
-        
-    #     matches = []
-    #     for item in items:
-    #         item_question = item.get("question", "").lower()
-    #         item_words = set(item_question.split())
-            
-    #         # Check for exact substring match (original logic)
-    #         if item_question in question_lower or question_lower in item_question:
-    #             matches.append({
-    #                 "question": item.get("question"),
-    #                 "answer": item.get("answer"),
-    #                 "score": 1.0  # Exact match
-    #             })
-    #         # Check for word overlap (fallback)
-    #         else:
-    #             overlap = len(question_words & item_words)
-    #             if overlap >= 2:  # At least 2 common words
-    #                 matches.append({
-    #                     "question": item.get("question"),
-    #                     "answer": item.get("answer"),
-    #                     "score": overlap / max(len(question_words), len(item_words))
-    #                 })
-        
-    #     # Sort by score and return top matches
-    #     matches.sort(key=lambda x: x["score"], reverse=True)
-        
-    #     if matches:
-    #         return {"hit": True, "matches": matches[:3]}  # Top 3 matches
-        
-    return {"hit": False, "matches": []}
-        
-    # except Exception as e:
-    #     logger.error(f"KB lookup error: {e}")
-    #     return {"hit": False, "matches": [], "error": str(e)}
-
-
-def create_help_request_sql(business_id: str, question: str) -> str:
-    """Create help request and return request ID."""
-    # help_id = str(uuid.uuid4())
-    # logger.info(f"Help request created: {help_id} for question: {question}")
-    # # TODO: Insert into your SQL database
-    return "21"
-
-
-# -----------------------------
 # Prewarm
-# -----------------------------
 def prewarm(proc: JobProcess):
     proc.userdata["vad"] = silero.VAD.load()
 
 
-# -----------------------------
-# Custom Agent with KB Logic
-# -----------------------------
 class ReceptionistAgent(Agent):
     def __init__(self) -> None:
         super().__init__(
             instructions="""You are a professional receptionist assistant for a business.
-            
 Your responsibilities:
 1. Answer caller questions using the knowledge base
 2. If information isn't available, create a help request and assure the caller someone will follow up
 3. Be warm, professional, and concise
 4. Never make up information - only use what's provided by the lookup_information function
 5: Avoid answering questions that are not related to a business
-
 Keep responses natural and conversational without complex formatting or emojis.""",
         )
 
     @function_tool
     async def lookup_information(self, question: str):
-        logger.info(f"🔍 Looking up: {question}")
+        logger.info(f"Searching for -: {question}")
+        logger.info("/n/n/n")
+
+        kb_result = kb_service.search(BUSINESS_ID, question)
+
+        logger.info(f"kb_result: {kb_result}")
         
-        kb_result = kb_lookup(BUSINESS_ID, question)
-        
-        logger.info("kb_result");
-        
-        if kb_result["hit"] and kb_result["matches"]:
-            matches = kb_result["matches"]
+        if kb_result.hit and kb_result.matches:
+            matches = kb_result.matches
             
             if len(matches) == 1:
-                # Single match - return directly
-                answer = matches[0]["answer"]
-                logger.info(f"✅ KB hit (single): {answer[:100]}...")
+                answer = matches[0].answer
+                logger.info(f"KB hit (single): {answer[:100]}...")
                 return f"Based on our records: {answer}"
             else:
-                # Multiple matches - combine them
                 combined = "\n\n".join([
-                    f"Regarding '{m['question']}': {m['answer']}" 
+                    f"Regarding '{m.question}': {m.answer}" 
                     for m in matches
                 ])
-                logger.info(f"✅ KB hit (multiple): {len(matches)} matches")
+                logger.info(f"KB hit (multiple): {len(matches)} matches")
                 return f"Here's what I found:\n\n{combined}"
         else:
-            # No match - create help request
-            help_id = create_help_request_sql(BUSINESS_ID, question)
-            logger.info(f"❌ No KB match, created help request: {help_id}")
+            help_request = help_service.create_request(question, str(BUSINESS_ID), str(random.randint(10**9, 10**10 - 1)))
             
             return f"""I don't have that specific information in my current knowledge base. 
-I've created a help request (ID: {help_id}) and one of our team members will get back to you shortly. 
+I've created a help request (ID: {help_request.request_id}) and one of our team members will get back to you shortly. 
 Is there anything else I can help you with in the meantime?"""
 
 
-# -----------------------------
-# Entry point
-# -----------------------------
 async def entrypoint(ctx: JobContext):
     ctx.log_context_fields = {"room": ctx.room.name}
     

@@ -1,19 +1,35 @@
 
+import enum
 from sqlmodel import SQLModel, Field
-from datetime import datetime, timezone
-from sqlalchemy import Column, ForeignKey
+from datetime import datetime
+from sqlalchemy import Column, text, ForeignKey, Enum
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 import uuid
 from typing import Optional
 
-class HelpRequest(SQLModel, table=True):  
-    __tablename__ = "help_requests" 
-    id: uuid.UUID | None = Field(default_factory=uuid.uuid4, primary_key=True)
-    customer_id: uuid.UUID = Field(sa_column=Column("customer_id", ForeignKey("customers.id")))
-    question: str
-    status: str = Field(default="pending")
-    supervisor_response: Optional[str] = Field(default=None)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    resolved_at: Optional[datetime] = Field(default=None)
-    notified: bool = Field(default=False)
-    notified_at: Optional[datetime] = Field(default=None)
-    
+class HelpStatus(enum.Enum):
+    pending = "pending"
+    resolved = "resolved"
+    timed_out = "timed_out"
+
+class HelpRequest(SQLModel, table=True):
+    __tablename__ = "help_request"
+    id: uuid.UUID = Field(
+        sa_column=Column(
+            UUID(as_uuid=True),
+            primary_key=True,
+            server_default=text("gen_random_uuid()"),
+        )
+    )
+    business_id: uuid.UUID = Field(sa_column=Column(UUID(as_uuid=True), ForeignKey("business.id", ondelete="CASCADE")))
+    question: str = Field(nullable=False)
+    customer_contact: dict | None = Field(sa_column=Column(JSONB))
+    status: HelpStatus = Field(sa_column=Column(Enum(HelpStatus)), default=HelpStatus.pending)
+    supervisor_answer: str | None = Field(default=None)
+    answered_at: Optional[datetime] = Field(default=None)
+    timeout_at: Optional[datetime] = Field(default=None)
+    created_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        nullable=False,
+        sa_column_kwargs={"server_default": text("now()")}
+    )

@@ -1,32 +1,40 @@
 import logging
 import uuid
-from datetime import datetime
-from typing import Optional, Dict
+from datetime import datetime, timezone
+from typing import Optional
 from dataclasses import dataclass
 import boto3
+import hashlib
 import os
 
 logger = logging.getLogger("help_service")
 
 
+def make_hash(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
 @dataclass
 class HelpRequest:
     request_id: str
+    user_id: str
     business_id: str
     question: str
-    caller_phone: Optional[str] = None
-    caller_name: Optional[str] = None
-    created_at: str = None
+    created_at: Optional[str] = None
+    resolved_at: Optional[str] = None
     status: str = "pending"
-    
+    answer: Optional[str] = None
+
     def __post_init__(self):
         if self.created_at is None:
-            self.created_at = datetime.utcnow().isoformat()
+            self.created_at = datetime.now(timezone.utc).isoformat()
 
 
 class HelpRequestService:
-    
+
     def __init__(self, table_name: str, region: str):
+        logger.info("Help Service initialized")
+
         self.dynamo = boto3.resource(
             "dynamodb",
             region_name=region,
@@ -34,113 +42,98 @@ class HelpRequestService:
             aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
         )
         self.table = self.dynamo.Table(table_name)
-    
-    def create_request(
-        self, 
-        business_id: str, 
-        question: str,
-        caller_phone: Optional[str] = None,
-        caller_name: Optional[str] = None,
-        metadata: Optional[Dict] = None
-    ) -> HelpRequest:
-        try:
-            request_id = str(uuid.uuid4())
-            help_request = HelpRequest(
-                request_id=request_id,
-                business_id=business_id,
-                question=question,
-                caller_phone=caller_phone,
-                caller_name=caller_name
-            )
-            
-            item = {
+
+    def register_temp_phone(self, business_id: str, phone_number: str) -> str:
+        user_id = make_hash(f"{business_id}:{phone_number}")
+
+        self.table.put_item(
+            Item={
                 "PK": f"BUSINESS#{business_id}",
-                "SK": f"HELP#{request_id}",
-                "request_id": request_id,
-                "business_id": business_id,
-                "question": question,
-                "status": help_request.status,
-                "created_at": help_request.created_at,
+                "SK": f"USER#{user_id}",
+                "user_id": user_id,
+                "phone_number": phone_number,
+                "created_at": datetime.now(timezone.utc).isoformat(),
             }
-            
-            if caller_phone:
-                item["caller_phone"] = caller_phone
-            
-            if caller_name:
-                item["caller_name"] = caller_name
-            
-            if metadata:
-                item["metadata"] = metadata
-            
-            self.table.put_item(Item=item)
-            
-            logger.info(f"✅ Help request created: {request_id} for business: {business_id}")
-            logger.info(f"   Question: {question}")
-            
-            self._notify_business(business_id, help_request)
-            
-            return help_request
-            
-        except Exception as e:
-            logger.error(f"Failed to create help request: {e}", exc_info=True)
-            return HelpRequest(
-                request_id=str(uuid.uuid4()),
-                business_id=business_id,
-                question=question,
-                status="failed"
-            )
-    
-    def get_request(self, business_id: str, request_id: str) -> Optional[HelpRequest]:
-        try:
-            response = self.table.get_item(
-                Key={
-                    "PK": f"BUSINESS#{business_id}",
-                    "SK": f"HELP#{request_id}"
-                }
-            )
-            
-            if "Item" in response:
-                item = response["Item"]
-                return HelpRequest(
-                    request_id=item["request_id"],
-                    business_id=item["business_id"],
-                    question=item["question"],
-                    caller_phone=item.get("caller_phone"),
-                    caller_name=item.get("caller_name"),
-                    created_at=item["created_at"],
-                    status=item.get("status", "pending")
-                )
-            
+        )
+
+        logger.info(f"Temporary phone -> user_id: {phone_number} -> {user_id}")
+        return user_id
+
+    def create_request(self, question: str, business_id: str, phone_number: str) -> HelpRequest:
+        request_id = str(uuid.uuid4())
+        created_at = datetime.now(timezone.utc).isoformat()
+        user_id = make_hash(f"{business_id}:{phone_number}")
+
+        help_req = HelpRequest(
+            request_id=request_id,
+            user_id=user_id,
+            business_id=business_id,
+            question=question,
+            created_at=created_at,
+        )
+
+        item = {
+            "PK": f"BUSINESS#{business_id}",
+            "SK": f"REQUEST#{request_id}",
+            "request_id": request_id,
+            "business_id": business_id,
+            "user_id": user_id,
+            "question": question,
+            "status": "pending",
+            "created_at": created_at,
+        }
+
+        self.table.put_item(Item=item)
+        logger.info(f"Help request created: {request_id}")
+
+        return help_req
+
+    def get_request(self, business_id: int, request_id: str) -> Optional[HelpRequest]:
+        resp = self.table.get_item(
+            Key={
+                "PK": f"BUSINESS#{business_id}",
+                "SK": f"REQUEST#{request_id}"
+            }
+        )
+
+        item = resp.get("Item")
+        if not item:
             return None
-            
-        except Exception as e:
-            logger.error(f"Failed to retrieve help request: {e}", exc_info=True)
-            return None
-    
-    def update_status(self, business_id: str, request_id: str, new_status: str) -> bool:
-        try:
-            self.table.update_item(
-                Key={
-                    "PK": f"BUSINESS#{business_id}",
-                    "SK": f"HELP#{request_id}"
-                },
-                UpdateExpression="SET #status = :status, updated_at = :updated_at",
-                ExpressionAttributeNames={
-                    "#status": "status"
-                },
-                ExpressionAttributeValues={
-                    ":status": new_status,
-                    ":updated_at": datetime.utcnow().isoformat()
-                }
-            )
-            
-            logger.info(f"Help request {request_id} status updated to: {new_status}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to update help request status: {e}", exc_info=True)
-            return False
-    
-    def _notify_business(self, business_id: str, help_request: HelpRequest):
-        logger.info(f"Notify business {business_id} about request {help_request.request_id}")
-        pass
+
+        return HelpRequest(
+            request_id=item["request_id"],
+            user_id=item["user_id"],
+            business_id=item["business_id"],
+            question=item["question"],
+            created_at=item["created_at"],
+            resolved_at=item.get("resolved_at"),
+            status=item["status"],
+            answer=item.get("answer"),
+        )
+
+    def update_status(self, business_id: int, request_id: str, new_status: str, answer: Optional[str] = None) -> bool:
+        update_expr = "SET #s = :new_status"
+        expr_vals = {":new_status": new_status}
+        expr_names = {"#s": "status"}
+
+        if new_status == "resolved":
+            resolved_ts = datetime.now(timezone.utc).isoformat()
+            update_expr += ", resolved_at = :resolved_at"
+            expr_vals[":resolved_at"] = resolved_ts
+
+        if answer is not None:
+            update_expr += ", answer = :answer"
+            expr_vals[":answer"] = answer
+
+        resp = self.table.update_item(
+            Key={
+                "PK": f"BUSINESS#{business_id}",
+                "SK": f"REQUEST#{request_id}"
+            },
+            UpdateExpression=update_expr,
+            ExpressionAttributeNames=expr_names,
+            ExpressionAttributeValues=expr_vals,
+            ReturnValues="UPDATED_NEW"
+        )
+
+        return "Attributes" in resp
