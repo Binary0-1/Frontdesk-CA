@@ -34,6 +34,7 @@ class KnowledgeBaseService:
             conn = get_db()
             cur = conn.cursor()
 
+            ## get the json data stored in KB table 
             cur.execute(
                 """
                 SELECT title, content 
@@ -44,30 +45,30 @@ class KnowledgeBaseService:
             )
             rows = cur.fetchall()
 
-            print(f"\n\nitems: {rows}")
-
+            
             if not rows:
                 logger.warning(f"No KB entries found for business: {business_id}")
                 return KBResult(hit=False, matches=[])
 
             # Normalize structure for ranking
+            ## Approach for dev env as data size is limited just for proof of concept 
             processed_items = []
             for row in rows:
                 title = row["title"]
-                content = row["content"]  # JSONB dict
+                content = row["content"]
 
-                # Extract question/answer from JSON content
+                # Extract question answer from JSON content
                 question_from_content = content.get("question", title or "")
                 answer_from_content = content.get("answer", "")
                 category = content.get("category")
 
-                if answer_from_content:  # Only keep valid items
+                if answer_from_content: 
                     processed_items.append({
                         "question": question_from_content,
                         "answer": answer_from_content,
                         "category": category,
                     })
-
+            # basic ranking 
             matches = self._rank_results(query, processed_items)
 
             return KBResult(

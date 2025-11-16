@@ -6,7 +6,7 @@ import "./App.css";
 
 function App() {
   return (
-    <main className="p-5 h-screen bg-[#DBDBDB] ">
+    <main className="p-5 min-h-screen bg-[#DBDBDB] ">
       <div className="rounded-[20px]  bg-[#F1F1F1] flex h-full">
         <Sidebar />
         <Routes>

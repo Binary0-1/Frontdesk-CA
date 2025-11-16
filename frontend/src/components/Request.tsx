@@ -3,7 +3,7 @@ import { useState } from "react";
 interface RequestItem {
   id: number;
   user: string;
-  query: string;
+  question: string;
   requestedAt: Date;
   status: "pending" | "fulfilled" | "rejected";
 }
@@ -31,14 +31,14 @@ const Request: React.FC<RequestProps> = ({
   const toggleTextArea = () => setShowTextArea((prev) => !prev);
 
   return (
-    <div className="relative p-6 bg-white rounded-2xl border border-gray-200 shadow-sm">
+    <div className="relative p-6 bg-white rounded-2xl border border-gray-200 shadow-sm w-full max-w-[350px]"  >
       <div className="flex justify-between items-start mb-4">
         <div className="flex flex-col gap-1">
           <p className="text-sm text-gray-500 font-medium">User</p>
           <p className="text-lg font-semibold">{request.user}</p>
 
           <p className="text-sm text-gray-500 font-medium mt-2">Query</p>
-          <p className="text-gray-800">{request.query}</p>
+          <p className="text-gray-800">{request.question}</p>
 
           <p className="text-sm text-gray-500 font-medium mt-2">Requested At</p>
           <p className="text-gray-700">

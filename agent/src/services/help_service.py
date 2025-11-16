@@ -24,19 +24,12 @@ class HelpRequestService:
     def __init__(self):
         logger.info("Help Service initialized")
 
+    # creates a help req entry in the table 
     def create_request(self, question: str, business_id: int, customer_id: int) -> HelpRequest:
         conn = None
         try:
             conn = get_db()
             cur = conn.cursor()
-
-            cur.execute("SELECT id FROM business WHERE id = %s", (business_id,))
-            if cur.fetchone() is None:
-                raise ValueError(f"Business with ID {business_id} does not exist.")
-
-            cur.execute("SELECT id FROM customers WHERE id = %s", (customer_id,))
-            if cur.fetchone() is None:
-                raise ValueError(f"Customer with ID {customer_id} does not exist.")
 
             created_at = datetime.now(timezone.utc)
 
