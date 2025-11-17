@@ -2,6 +2,12 @@
 
 A multi-tenant backend platform powering an AI-driven customer-support agent with human-in-the-loop workflows. The system integrates knowledge-base retrieval, LLM-powered phrasing, supervisor review, and LiveKit-based voice interactions.
 
+
+Architecture Diagram:
+
+![architecture](frontend/src/assets/architecture.png)
+
+
 ## Architecture Overview
 
 * **FASTAPI Backend** – Tenants, help-requests, KB, ranking logic, and orchestration.
@@ -89,3 +95,4 @@ npm run dev
 * Add analytics per tenant.
 * Expand conversational flows.
 * We can also introduce semantic search using pgvector.
+
